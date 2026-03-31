@@ -12,6 +12,17 @@ import dspy
 # EXTRACTION SIGNATURES
 # ─────────────────────────────────────────────────────────────────────────────
 
+class ProductClassificationSignature(dspy.Signature):
+    """
+    Classify a free-form product/service string into a standard SaaS/Tech category.
+    Use standard categories such as: "Platform SaaS", "Consulting & Services",
+    "Support & Maintenance", "Hardware/Infrastructure", "Integration/API".
+    """
+    raw_product_string: str = dspy.InputField(desc="The extracted free-form product/service string")
+    client_context: str = dspy.InputField(desc="Context about the client's industry and typical offerings")
+    
+    standard_category: str = dspy.OutputField(desc="A single standardized macro-category name")
+
 class ContractSummarization(dspy.Signature):
     """
     Produce a summary of MAX 600 words focused on: parties involved, key obligations, payment terms, duration/deadlines, penalties, termination clauses, governing law.
@@ -152,6 +163,19 @@ class ContractScoring(dspy.Signature):
     improvement_actions: str = dspy.OutputField(
         desc="JSON array of specific actions to improve the score at next renewal"
     )
+
+class RenewalProbabilitySignature(dspy.Signature):
+    """
+    Calculate the likelihood of a client renewing a specific contract,
+    producing a probability score from 0 to 100.
+    """
+    contract_data: str = dspy.InputField(desc="JSON of the current contract's key terms (ARR, end_date, etc.)")
+    client_history: str = dspy.InputField(desc="Client history: past renewals, payment punctuality, discount trends")
+    portfolio_context: str = dspy.InputField(desc="Context on how strategic this client is to the portfolio")
+
+    renewal_probability: int = dspy.OutputField(desc="Probability of renewal from 0 to 100")
+    rationale: str = dspy.OutputField(desc="Brief reasoning for the assigned probability")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

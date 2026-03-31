@@ -155,7 +155,18 @@ def _strategic_clients(contracts: list) -> dict:
         clients[name]["value"] += val
         clients[name]["arr"] += arr
         clients[name]["contracts"] += 1
-        clients[name]["score"] = max(clients[name]["score"], c.get("contract_score", 0))
+        
+        # We accumulate the weighted sums explicitly
+        client_score = c.get("contract_score", 0) or 0
+        client_risk = c.get("scoring", {}).get("risk_exposure", 0) or 0
+        weight = val if val > 0 else 1  # fallback weight
+        clients[name].setdefault("weighted_score_sum", 0)
+        clients[name].setdefault("weighted_risk_sum", 0)
+        clients[name].setdefault("total_weight", 0)
+        
+        clients[name]["weighted_score_sum"] += client_score * weight
+        clients[name]["weighted_risk_sum"] += client_risk * weight
+        clients[name]["total_weight"] += weight
 
     sorted_clients = sorted(clients.items(), key=lambda x: x[1]["value"], reverse=True)
 
@@ -167,23 +178,29 @@ def _strategic_clients(contracts: list) -> dict:
 
     concentration_risk = "high" if hhi > 2500 else "medium" if hhi > 1000 else "low"
 
+    client_results = []
+    for name, data in sorted_clients[:20]:
+        total_w = data["total_weight"]
+        avg_score = int(data["weighted_score_sum"] / total_w) if total_w else 0
+        avg_risk = int(data["weighted_risk_sum"] / total_w) if total_w else 0
+        
+        client_results.append({
+            "name": name,
+            "value_eur": data["value"],
+            "arr_eur": data["arr"],
+            "contracts": data["contracts"],
+            "revenue_share_pct": round(data["value"] / total_value * 100, 1) if total_value else 0,
+            "contract_score": avg_score,    # Frontend uses this for Heatmap (100 - score)
+            "risk_exposure_score": avg_risk # Rollup per client explicit metric
+        })
+
     return {
         "total_portfolio_value": total_value,
         "total_arr": sum(c.get("annual_recurring_revenue", 0) or 0 for c in contracts),
         "client_count": len(clients),
         "herfindahl_index": round(hhi, 1),
         "concentration_risk": concentration_risk,
-        "clients": [
-            {
-                "name": name,
-                "value_eur": data["value"],
-                "arr_eur": data["arr"],
-                "contracts": data["contracts"],
-                "revenue_share_pct": round(data["value"] / total_value * 100, 1) if total_value else 0,
-                "contract_score": data["score"],
-            }
-            for name, data in sorted_clients[:20]
-        ],
+        "clients": client_results,
         "top_5_concentration_pct": round(
             sum(v["value"] for _, v in sorted_clients[:5]) / total_value * 100, 1
         ) if total_value else 0,

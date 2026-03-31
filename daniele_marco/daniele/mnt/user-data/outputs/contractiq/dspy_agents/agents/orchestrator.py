@@ -35,6 +35,8 @@ from signatures.contract_signatures import (
     PortfolioRiskAnalysis,
     ContractQA,
     ContractSummarization,
+    ProductClassificationSignature,
+    RenewalProbabilitySignature,
 )
 
 from utils.json_utils import safe_parse_json, safe_parse_int
@@ -98,6 +100,20 @@ class ExtractionAgent(dspy.Module):
     def forward(self, contract_summary: str, client_context: str) -> dspy.Prediction:
         return self.extract(
             contract_summary=contract_summary,
+            client_context=client_context,
+        )
+
+
+class ProductClassificationAgent(dspy.Module):
+    """Agent 1b: Normalize free-form product/service strings into standard categories."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.classify = dspy.ChainOfThought(ProductClassificationSignature)
+
+    def forward(self, raw_product_string: str, client_context: str) -> dspy.Prediction:
+        return self.classify(
+            raw_product_string=raw_product_string,
             client_context=client_context,
         )
 
@@ -167,6 +183,29 @@ class ScoringAgent(dspy.Module):
             portfolio_context=portfolio_context,
             sector_benchmarks=sector_benchmarks,
             score_history=score_history,
+        )
+
+
+class RenewalProbabilityAgent(dspy.Module):
+    """
+    Agent 4b: Calculate probability of renewal (0-100)
+    Read client history and returns a probabilistic assessment.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prob = dspy.ChainOfThought(RenewalProbabilitySignature)
+
+    def forward(
+        self,
+        contract_data: str,
+        client_history: str,
+        portfolio_context: str,
+    ) -> dspy.Prediction:
+        return self.prob(
+            contract_data=contract_data,
+            client_history=client_history,
+            portfolio_context=portfolio_context,
         )
 
 
@@ -265,9 +304,11 @@ class ContractIQOrchestrator(dspy.Module):
         super().__init__()
         self.summarizer = ContractSummarizer()
         self.extractor = ExtractionAgent()
+        self.product_classifier = ProductClassificationAgent()
         self.risk_analyst = RiskAnalystAgent()
         self.clausola_gemella = ClausolaGemellaAgent()
         self.scorer = ScoringAgent()
+        self.renewal_agent = RenewalProbabilityAgent()
         self.alert_agent = AlertAgent()
         self.qa_agent = QAAgent()
         self.score_history_agent = ScoreHistoryAgent()
@@ -307,23 +348,45 @@ class ContractIQOrchestrator(dspy.Module):
         )
         logger.info("Extraction complete client=%s", client_id)
 
+        # Step 1b: Normalize products/services
+        products = safe_parse_json(extracted.products_services)
+        if isinstance(products, list):
+            for prod in products:
+                raw_name = prod.get("name", "")
+                if raw_name:
+                    p_res = self.product_classifier(
+                        raw_product_string=raw_name,
+                        client_context=client_context
+                    )
+                    prod["name"] = p_res.standard_category
+        
         # Step 2: Score the contract (with historical context)
+        contract_data_for_scoring = json.dumps({
+            "client_name": extracted.client_name,
+            "total_value_eur": extracted.total_value_eur,
+            "arr": extracted.annual_recurring_revenue,
+            "end_date": extracted.end_date,
+            "discount_pct": extracted.discount_percentage,
+            "payment_terms": extracted.payment_terms_days,
+            "risk_flags": extracted.risk_flags,
+            "auto_renewal": extracted.auto_renewal,
+        })
+        
         scored = self.scorer(
-            extracted_contract=json.dumps({
-                "client_name": extracted.client_name,
-                "total_value_eur": extracted.total_value_eur,
-                "arr": extracted.annual_recurring_revenue,
-                "end_date": extracted.end_date,
-                "discount_pct": extracted.discount_percentage,
-                "payment_terms": extracted.payment_terms_days,
-                "risk_flags": extracted.risk_flags,
-                "auto_renewal": extracted.auto_renewal,
-            }),
+            extracted_contract=contract_data_for_scoring,
             portfolio_context=portfolio_context,
             sector_benchmarks=sector_benchmarks,
             score_history=score_history,
         )
         logger.info("Score computed: %d (delta: %d) client=%s", scored.overall_score, scored.score_delta, client_id)
+
+        # Step 2c: Renewal Probability
+        renewal_prob = self.renewal_agent(
+            contract_data=contract_data_for_scoring,
+            client_history=client_context,
+            portfolio_context=portfolio_context,
+        )
+        logger.info("Renewal Probability computed: %s client=%s", renewal_prob.renewal_probability, client_id)
 
         # Step 2b: Persist score to history (fire-and-forget — never blocks the pipeline)
         if client_id and contract_id:
@@ -366,7 +429,8 @@ class ContractIQOrchestrator(dspy.Module):
                 "payment_terms_days": extracted.payment_terms_days,
                 "discount_percentage": extracted.discount_percentage,
                 "sla_uptime_percentage": extracted.sla_uptime_percentage,
-                "products_services": safe_parse_json(extracted.products_services),
+                "renewal_probability": safe_parse_int(renewal_prob.renewal_probability),
+                "products_services": products if isinstance(products, list) else safe_parse_json(extracted.products_services),
                 "penalty_clauses": safe_parse_json(extracted.penalty_clauses),
                 "risk_flags": safe_parse_json(extracted.risk_flags),
                 "non_standard_terms": safe_parse_json(extracted.non_standard_terms),

@@ -200,7 +200,8 @@
   </div>
   <nav class="nav">
     <div class="nav-section">Dashboard</div>
-    <div class="nav-item active" onclick="showView('upload')"><span class="icon">📤</span>Upload & Analyze</div>
+    <div class="nav-item active" onclick="showView('overview')"><span class="icon">🏠</span>Panoramica</div>
+    <div class="nav-item" onclick="showView('upload')"><span class="icon">📤</span>Upload & Analyze</div>
     <div class="nav-item" onclick="showView('strategic')"><span class="icon">👑</span>Clienti Strategici</div>
     <div class="nav-item" onclick="showView('critical')"><span class="icon">⚡</span>Contratti Critici</div>
     <div class="nav-item" onclick="showView('conditions')"><span class="icon">💰</span>Condizioni Commerciali</div>
@@ -221,15 +222,34 @@
 <!-- MAIN -->
 <main class="main">
   <div class="topbar">
-    <div class="topbar-title" id="viewTitle">Upload & Analyze</div>
+    <div class="topbar-title" id="viewTitle">Panoramica</div>
     <div class="topbar-actions">
       <span id="clientBadge" style="font-size:12px; color:var(--text-muted)">Cliente: demo_client</span>
       <button class="btn btn-ghost" onclick="loadPortfolio()">🔄 Aggiorna</button>
     </div>
   </div>
 
+  <!-- OVERVIEW VIEW -->
+  <div class="content view active" id="view-overview">
+    <div class="summary-grid" id="overviewKPI"></div>
+    <div class="dashboard-grid">
+      <div class="card full-width">
+        <h3>⚡ Timeline Scadenze</h3>
+        <div id="overviewTimeline"></div>
+      </div>
+      <div class="card">
+        <h3>👑 Heatmap Sintesi</h3>
+        <div id="overviewHeatmap" style="position:relative; height:280px; width:100%"></div>
+      </div>
+      <div class="card">
+        <h3>⚠️ Anomalie</h3>
+        <div id="overviewAnomalies"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- UPLOAD VIEW -->
-  <div class="content view active" id="view-upload">
+  <div class="content view" id="view-upload">
     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
       <div class="icon">📄</div>
       <h3>Carica un contratto</h3>
@@ -310,7 +330,7 @@
       </div>
       <div class="card">
         <h3>⚠️ Concentrazione Portfolio</h3>
-        <div class="chart-wrap"><canvas id="concentrationChart"></canvas></div>
+        <div id="concentrationHeatmap" style="position:relative; height:280px; width:100%; overflow:hidden;"></div>
       </div>
       <div class="card full-width">
         <h3>👑 Clienti Strategici</h3>
@@ -368,6 +388,10 @@
           <thead><tr><th>Cliente</th><th>Sconto</th><th>Pagamento</th><th>Alert</th></tr></thead>
           <tbody id="conditionsTable"></tbody>
         </table>
+      </div>
+      <div class="card full-width">
+        <h3>🌟 Clausola Gemella™ — Anomalie Portfolio <span class="badge badge-accent">AI-powered</span></h3>
+        <div id="portfolioGemella"></div>
       </div>
     </div>
   </div>
@@ -619,6 +643,58 @@ function renderPortfolio(data) {
   renderProducts(data.dashboard_4_product_performance || {});
   renderRisks(data.dashboard_5_risk_clauses || {});
   renderAlerts(data);
+  renderOverview(data);
+}
+
+function renderOverview(data) {
+  const sum = data.summary || {};
+  document.getElementById('overviewKPI').innerHTML = `
+    <div class="summary-card">
+      <div class="label">ContractIQ Score™ Medio</div>
+      <div class="value" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent">${(sum.avg_contract_score || 0).toFixed(0)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Contratti Totali</div>
+      <div class="value">${sum.total_contracts || 0}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Valore Portfolio</div>
+      <div class="value">${formatEur(sum.total_value_eur)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">ARR Totale</div>
+      <div class="value">${formatEur(sum.total_arr_eur)}</div>
+    </div>
+  `;
+
+  const expiring = (data.dashboard_2_critical_contracts?.expiring_contracts || []).slice(0, 3);
+  document.getElementById('overviewTimeline').innerHTML = expiring.map(c => {
+     const daysToNotice = c.days_to_expiry - (c.renewal_notice_days || 0);
+     const noticeColor = daysToNotice < 0 ? 'var(--red)' : daysToNotice < 14 ? 'var(--yellow)' : 'var(--green)';
+     const noticeText = daysToNotice > 0 ? daysToNotice + ' gg' : 'SCADUTO';
+     return `<div class="contract-item" style="margin-bottom:8px">
+      <div class="left">
+        <div class="urgency-dot urgency-${c.urgency}"></div>
+        <div>
+          <div class="name">${c.client_name}</div>
+          <div class="meta">
+            <span style="color:${noticeColor}">⚠️ preavviso: ${noticeText}</span> · scadenza: ${c.days_to_expiry} gg
+          </div>
+        </div>
+      </div>
+     </div>`;
+  }).join('') || '<p style="color:var(--text-muted)">Nessuna scadenza critica.</p>';
+
+  const anomalies = (data.dashboard_3_commercial_conditions?.non_standard_contracts || []).slice(0, 3);
+  document.getElementById('overviewAnomalies').innerHTML = anomalies.map(c => `
+    <div class="gemella-item gemella-high" style="margin-bottom:8px; padding:10px;">
+      <div class="gemella-header" style="margin-bottom:4px"><span class="gemella-type">${c.client_name}</span></div>
+      <div class="gemella-text" style="font-size:11px">${c.alert}</div>
+    </div>
+  `).join('') || '<p style="color:var(--text-muted)">Nessuna anomalia.</p>';
+
+  // Re-use heatmap function for overview heatmap
+  renderHeatmap(data.dashboard_1_strategic_clients?.clients || [], 'overviewHeatmap');
 }
 
 function renderStrategic(d) {
@@ -627,12 +703,8 @@ function renderStrategic(d) {
   renderBarChart('clientChart', clients.map(c => c.name), clients.map(c => c.value_eur),
     clients.map(c => `rgba(99,102,241,${0.9 - clients.indexOf(c) * 0.08})`));
 
-  // Concentration donut
-  const top5 = d.top_5_concentration_pct || 0;
-  renderDoughnut('concentrationChart', ['Top 5', 'Altri'],
-    [top5, 100 - top5],
-    [d.concentration_risk === 'high' ? '#ef4444' : d.concentration_risk === 'medium' ? '#f59e0b' : '#10b981', '#2a2a3a'],
-    `HHI: ${d.herfindahl_index || 0}`);
+  // Concentration heatmap
+  renderHeatmap(clients, 'concentrationHeatmap');
 
   document.getElementById('strategicTable').innerHTML = clients.map(c => `
     <tr>
@@ -652,14 +724,18 @@ function renderCritical(d) {
   document.getElementById('criticalCount').textContent = d.critical_count || 0;
   document.getElementById('highCount').textContent = d.high_count || 0;
 
-  document.getElementById('expiryList').innerHTML = (d.expiring_contracts || []).map(c => `
+  document.getElementById('expiryList').innerHTML = (d.expiring_contracts || []).map(c => {
+    const daysToNotice = c.days_to_expiry - (c.renewal_notice_days || 0);
+    const noticeColor = daysToNotice < 0 ? 'var(--red)' : daysToNotice < 14 ? 'var(--yellow)' : 'var(--green)';
+    const noticeText = daysToNotice > 0 ? daysToNotice + ' gg' : 'SCADUTO';
+    return `
     <div class="contract-item">
       <div class="left">
         <div class="urgency-dot urgency-${c.urgency}"></div>
         <div class="icon-box" style="background:rgba(99,102,241,0.1)">📄</div>
         <div>
           <div class="name">${c.client_name}</div>
-          <div class="meta">${c.filename} · ${c.days_to_expiry} giorni · ${formatEur(c.value_eur)}</div>
+          <div class="meta">${c.filename} · <span style="color:${noticeColor}">⚠️ preavviso: ${noticeText}</span> · scadenza: ${c.days_to_expiry} gg · ${formatEur(c.value_eur)}</div>
           ${c.auto_renewal ? `<div class="meta" style="color:var(--yellow)">⚠️ Rinnovo tacito — agire entro ${c.action_deadline || '?'}</div>` : ''}
         </div>
       </div>
@@ -668,7 +744,8 @@ function renderCritical(d) {
         <div class="change" style="color:${c.urgency === 'critical' ? 'var(--red)' : 'var(--yellow)'}">${c.urgency.toUpperCase()}</div>
       </div>
     </div>
-  `).join('') || '<p style="color:var(--text-muted)">Nessun contratto in scadenza nei prossimi 6 mesi.</p>';
+    `;
+  }).join('') || '<p style="color:var(--text-muted)">Nessun contratto in scadenza nei prossimi 6 mesi.</p>';
 }
 
 function renderConditions(d) {
@@ -687,12 +764,48 @@ function renderConditions(d) {
         <td style="font-size:12px;color:var(--yellow)">${c.alert}</td>
       </tr>
     `).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">Tutti i contratti nei termini standard</td></tr>';
+
+  const gemellaContainer = document.getElementById('portfolioGemella');
+  if (gemellaContainer) {
+    gemellaContainer.innerHTML = (d.non_standard_contracts || []).map(c => {
+      const cls = (c.impact_eur && c.impact_eur > 10000) ? 'gemella-high' : 'gemella-medium';
+      const color = (c.impact_eur && c.impact_eur > 10000) ? 'var(--red)' : 'var(--yellow)';
+      return `<div class="gemella-item ${cls}">
+        <div class="gemella-header">
+          <span class="gemella-type">${c.client_name}</span>
+          <span class="percentile-badge" style="background:rgba(0,0,0,0.3);color:${color}">Impatto: ${c.impact_eur ? formatEur(c.impact_eur) : 'N/A'}</span>
+        </div>
+        <div class="gemella-text">${c.alert || ''}</div>
+        <div class="gemella-script">💡 ${c.negotiation_script || 'Rivedere le condizioni non standard per mitigare l\'impatto sul business.'}</div>
+      </div>`;
+    }).join('') || '<p style="color:var(--text-muted)">Nessuna anomalia rilevata nel portfolio.</p>';
+  }
 }
 
 function renderProducts(d) {
   const prods = (d.products || []).slice(0, 8);
   renderBarChart('productsChart', prods.map(p => p.name), prods.map(p => p.total_value_eur),
     prods.map(p => p.is_recurring ? '#10b981' : '#6366f1'));
+    
+  // Visual YoY delta under the chart
+  const deltaRow = prods.map(p => {
+    const delta = typeof p.yoy_change_pct === 'number' ? (p.yoy_change_pct > 0 ? `+${p.yoy_change_pct}%` : `${p.yoy_change_pct}%`) : 'N/A';
+    const color = delta.startsWith('+') ? 'var(--green)' : (delta.startsWith('-') ? 'var(--red)' : 'var(--text-muted)');
+    return `<div style="flex:1;font-size:11px;color:${color};text-align:center;font-weight:600">${delta}</div>`;
+  }).join('');
+  
+  const chartWrap = document.getElementById('productsChart').parentElement;
+  let deltaDiv = chartWrap.nextElementSibling;
+  if (!deltaDiv || !deltaDiv.classList.contains('delta-row')) {
+    deltaDiv = document.createElement('div');
+    deltaDiv.className = 'delta-row';
+    deltaDiv.style.display = 'flex';
+    deltaDiv.style.justifyContent = 'space-around';
+    deltaDiv.style.marginTop = '8px';
+    chartWrap.insertAdjacentElement('afterend', deltaDiv);
+  }
+  deltaDiv.innerHTML = deltaRow;
+
   document.getElementById('productsTable').innerHTML = prods.map(p => `
     <tr>
       <td style="font-weight:500">${p.name}</td>
@@ -906,6 +1019,36 @@ function renderDoughnut(id, labels, data, colors, centerText) {
   });
 }
 
+function renderHeatmap(clients, elementId = 'concentrationHeatmap') {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.innerHTML = '';
+  // Force a small delay if el.offsetWidth is 0 (display:none)
+  const W = el.offsetWidth || el.parentElement.offsetWidth || 300;
+  const H = el.offsetHeight || 280;
+  clients.forEach(c => {
+    const minW = 40, maxW = W - 40;
+    const rawX = (c.revenue_share_pct / 35) * W; 
+    const x = Math.max(minW, Math.min(maxW, rawX)); // asse X = peso fatturato
+    const minH = 40, maxH = H - 40;
+    const rawY = ((100 - c.contract_score) / 100) * H;
+    const y = Math.max(minH, Math.min(maxH, rawY)); // asse Y = rischio
+    const size = Math.max(30, Math.sqrt((c.value_eur || 0) / 5000));
+    const isCritical = c.revenue_share_pct > 15 && c.contract_score < 60;
+    const div = document.createElement('div');
+    div.style.cssText = `position:absolute;left:${x}px;top:${y}px;
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${isCritical ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.2)'};
+      border:2px solid ${isCritical ? 'var(--red)' : 'var(--accent)'};
+      display:flex;align-items:center;justify-content:center;
+      font-size:10px;font-weight:600;cursor:default;transform:translate(-50%,-50%);
+      color:var(--text);flex-direction:column;text-align:center;`;
+    div.title = `${c.name} · ARR: ${formatEur(c.arr_eur)} · Score: ${c.contract_score}`;
+    div.textContent = c.name.split(' ')[0];
+    el.appendChild(div);
+  });
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatEur(v) {
   if (!v && v !== 0) return '—';
@@ -967,17 +1110,17 @@ function getMockPortfolio() {
       avg_discount_pct: 14.2, avg_payment_days: 52, high_discount_count: 3, long_payment_count: 4,
       discount_histogram: [{range:'0-5%',count:3},{range:'5-10%',count:2},{range:'10-20%',count:4},{range:'20-30%',count:2},{range:'30-50%',count:1}],
       non_standard_contracts: [
-        { client_name: 'Delta SRL', discount_pct: 35, payment_days: 90, alert: 'Sconto molto elevato (35%); Termini critici (90gg)' },
-        { client_name: 'Acme SRL', discount_pct: 22, payment_days: 60, alert: 'Sconto sopra media (22%)' },
+        { client_name: 'Delta SRL', discount_pct: 35, payment_days: 90, alert: 'Sconto molto elevato (35%); Termini critici (90gg)', impact_eur: 15400, negotiation_script: 'Proponi riduzione sconto al 20% in cambio di rinnovi successivi o upsell immediato.' },
+        { client_name: 'Acme SRL', discount_pct: 22, payment_days: 60, alert: 'Sconto sopra media (22%)', impact_eur: 4200, negotiation_script: 'Sfrutta il rinnovo vicino per ridurre i termini di pagamento a 30gg in cambio dello sconto.' },
       ],
     },
     dashboard_4_product_performance: {
       total_recurring_arr: 380000,
       products: [
-        { name: 'Platform SaaS', total_value_eur: 480000, arr_eur: 160000, contract_count: 5, is_recurring: true, avg_value_per_contract: 96000 },
-        { name: 'Consulting', total_value_eur: 320000, arr_eur: 0, contract_count: 4, is_recurring: false, avg_value_per_contract: 80000 },
-        { name: 'Support Premium', total_value_eur: 210000, arr_eur: 70000, contract_count: 3, is_recurring: true, avg_value_per_contract: 70000 },
-        { name: 'Integration Services', total_value_eur: 180000, arr_eur: 0, contract_count: 2, is_recurring: false, avg_value_per_contract: 90000 },
+        { name: 'Platform SaaS', total_value_eur: 480000, arr_eur: 160000, contract_count: 5, is_recurring: true, avg_value_per_contract: 96000, yoy_change_pct: 18 },
+        { name: 'Consulting', total_value_eur: 320000, arr_eur: 0, contract_count: 4, is_recurring: false, avg_value_per_contract: 80000, yoy_change_pct: -5 },
+        { name: 'Support Premium', total_value_eur: 210000, arr_eur: 70000, contract_count: 3, is_recurring: true, avg_value_per_contract: 70000, yoy_change_pct: 22 },
+        { name: 'Integration Services', total_value_eur: 180000, arr_eur: 0, contract_count: 2, is_recurring: false, avg_value_per_contract: 90000, yoy_change_pct: -12 },
       ],
     },
     dashboard_5_risk_clauses: {
