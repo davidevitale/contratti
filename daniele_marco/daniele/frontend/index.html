@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContractIQ — Contract Intelligence OS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+
+  /* Sidebar */
+  .sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .logo { padding: 24px 20px; border-bottom: 1px solid var(--border); }
+  .logo h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .nav { padding: 12px; flex: 1; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text-muted); transition: all 0.15s; margin-bottom: 2px; }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: rgba(99,102,241,0.15); color: var(--accent); font-weight: 500; }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+  .nav-section { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; padding: 16px 12px 6px; }
+
+  /* Optimization badge */
+  .opt-badge { margin: 12px; padding: 12px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; }
+  .opt-badge .label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .opt-badge .value { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .opt-progress { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .opt-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width 0.5s; }
+
+  /* Main */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { height: 64px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: var(--surface); }
+  .topbar-title { font-size: 18px; font-weight: 600; }
+  .topbar-actions { display: flex; gap: 12px; align-items: center; }
+  .btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #5558e3; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* Upload zone */
+  .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 24px; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+  .upload-zone .icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-zone h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .upload-zone p { font-size: 13px; color: var(--text-muted); }
+  #fileInput { display: none; }
+
+  /* Summary cards */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .summary-card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .summary-card .value { font-size: 28px; font-weight: 700; }
+  .summary-card .change { font-size: 12px; margin-top: 4px; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .warning { color: var(--yellow); }
+
+  /* Dashboard grid */
+  .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .card.full-width { grid-column: 1 / -1; }
+  .card h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card h3 .badge { font-size: 10px; padding: 2px 8px; border-radius: 20px; }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge-accent { background: rgba(99,102,241,0.15); color: var(--accent); }
+
+  /* Score ring */
+  .score-ring { display: flex; align-items: center; gap: 20px; margin-bottom: 12px; }
+  .ring-container { position: relative; width: 80px; height: 80px; }
+  .ring-container canvas { position: absolute; }
+  .ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; }
+  .score-details { flex: 1; }
+  .score-bar { margin-bottom: 8px; }
+  .score-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .score-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 3px; transition: width 1s; }
+
+  /* Contract list */
+  .contract-list { display: flex; flex-direction: column; gap: 10px; }
+  .contract-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: border-color 0.15s; }
+  .contract-item:hover { border-color: var(--accent); }
+  .contract-item .left { display: flex; align-items: center; gap: 12px; }
+  .contract-item .icon-box { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .contract-item .name { font-size: 14px; font-weight: 500; }
+  .contract-item .meta { font-size: 12px; color: var(--text-muted); }
+  .urgency-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .urgency-critical { background: var(--red); }
+  .urgency-high { background: var(--yellow); }
+  .urgency-medium { background: var(--accent); }
+  .urgency-low { background: var(--green); }
+
+  /* Clausola Gemella */
+  .gemella-item { background: var(--surface2); border-radius: 8px; padding: 14px; margin-bottom: 10px; border-left: 3px solid; }
+  .gemella-high { border-left-color: var(--red); }
+  .gemella-medium { border-left-color: var(--yellow); }
+  .gemella-low { border-left-color: var(--green); }
+  .gemella-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .gemella-type { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .percentile-badge { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+  .gemella-text { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+  .gemella-script { font-size: 12px; color: var(--accent); margin-top: 8px; font-style: italic; }
+
+  /* Alert feed */
+  .alert-item { display: flex; gap: 12px; padding: 14px; background: var(--surface2); border-radius: 8px; margin-bottom: 10px; border-left: 3px solid; }
+  .alert-critical { border-left-color: var(--red); }
+  .alert-high { border-left-color: var(--yellow); }
+  .alert-content { flex: 1; }
+  .alert-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .alert-msg { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+  .alert-action { font-size: 12px; color: var(--accent); margin-top: 6px; font-weight: 500; }
+  .alert-value { font-size: 14px; font-weight: 700; color: var(--red); white-space: nowrap; }
+
+  /* Chat */
+  .chat-container { display: flex; flex-direction: column; height: calc(100vh - 64px); }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { max-width: 80%; }
+  .msg-user { align-self: flex-end; }
+  .msg-assistant { align-self: flex-start; }
+  .msg-bubble { padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; }
+  .msg-user .msg-bubble { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
+  .msg-assistant .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg-sources { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .source-chip { font-size: 11px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: var(--accent); padding: 4px 10px; border-radius: 20px; display: inline-block; }
+  .msg-rating { display: flex; gap: 6px; margin-top: 8px; }
+  .star-btn { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--text-muted); transition: color 0.1s; padding: 2px; }
+  .star-btn:hover, .star-btn.active { color: var(--yellow); }
+  .chat-input-area { padding: 16px 24px; border-top: 1px solid var(--border); background: var(--surface); }
+  .chat-input-row { display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+  .chat-input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 14px; resize: none; }
+  .send-btn { background: var(--accent); border: none; border-radius: 8px; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; font-size: 16px; }
+  .follow-ups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .follow-up-chip { font-size: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; cursor: pointer; color: var(--text-muted); transition: all 0.15s; }
+  .follow-up-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Confidence indicator */
+  .confidence { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-bottom: 6px; }
+  .confidence-high { background: rgba(16,185,129,0.1); color: var(--green); }
+  .confidence-medium { background: rgba(245,158,11,0.1); color: var(--yellow); }
+  .confidence-low { background: rgba(239,68,68,0.1); color: var(--red); }
+
+  /* Loading */
+  .loading { display: flex; align-items: center; gap: 8px; padding: 12px 16px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s infinite; }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+  /* View management */
+  .view { display: none; }
+  .view.active { display: block; }
+  .chat-view { display: none; flex-direction: column; }
+  .chat-view.active { display: flex; }
+
+  /* Progress bar for processing */
+  .progress-bar { height: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; animation: progress-anim 1.5s infinite; }
+  @keyframes progress-anim { 0% { width: 0%; } 50% { width: 70%; } 100% { width: 100%; } }
+
+  /* Chart container */
+  .chart-wrap { position: relative; height: 200px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 12px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <h1>ContractIQ</h1>
+    <p>Contract Intelligence OS</p>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Dashboard</div>
+    <div class="nav-item active" onclick="showView('upload')"><span class="icon">📤</span>Upload & Analyze</div>
+    <div class="nav-item" onclick="showView('strategic')"><span class="icon">👑</span>Clienti Strategici</div>
+    <div class="nav-item" onclick="showView('critical')"><span class="icon">⚡</span>Contratti Critici</div>
+    <div class="nav-item" onclick="showView('conditions')"><span class="icon">💰</span>Condizioni Commerciali</div>
+    <div class="nav-item" onclick="showView('products')"><span class="icon">📈</span>Performance Prodotti</div>
+    <div class="nav-item" onclick="showView('risks')"><span class="icon">🛡️</span>Clausole a Rischio</div>
+    <div class="nav-section">AI Tools</div>
+    <div class="nav-item" onclick="showView('chat')"><span class="icon">💬</span>Contract Chat</div>
+    <div class="nav-item" onclick="showView('alerts')"><span class="icon">🔔</span>Alert Proattivi</div>
+  </nav>
+  <div class="opt-badge">
+    <div class="label">Modello ottimizzato</div>
+    <div class="value" id="optStatus">Base model</div>
+    <div class="opt-progress"><div class="opt-progress-fill" id="optFill" style="width:0%"></div></div>
+    <div class="label" style="margin-top:6px" id="optLabel">0/20 feedback raccolti</div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="viewTitle">Upload & Analyze</div>
+    <div class="topbar-actions">
+      <span id="clientBadge" style="font-size:12px; color:var(--text-muted)">Cliente: demo_client</span>
+      <button class="btn btn-ghost" onclick="loadPortfolio()">🔄 Aggiorna</button>
+    </div>
+  </div>
+
+  <!-- UPLOAD VIEW -->
+  <div class="content view active" id="view-upload">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📄</div>
+      <h3>Carica un contratto</h3>
+      <p>PDF, DOCX, TXT — Analisi completa in 30 secondi</p>
+      <p style="margin-top:8px; color:var(--accent)">Clicca o trascina qui</p>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.docx,.txt" onchange="uploadFile(this)">
+
+    <div id="processingBar" style="display:none; margin-bottom:16px">
+      <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px" id="processingMsg">Analisi in corso...</div>
+      <div class="progress-bar"></div>
+    </div>
+
+    <div id="analysisResult" style="display:none">
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="label">ContractIQ Score™</div>
+          <div class="value" id="resScore" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent">—</div>
+          <div class="change" id="resScoreLabel">—</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Valore Contratto</div>
+          <div class="value" id="resValue">—</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">ARR</div>
+          <div class="value" id="resARR">—</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Scadenza</div>
+          <div class="value" style="font-size:20px" id="resExpiry">—</div>
+          <div class="change" id="resDays">—</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="card">
+          <h3>📋 Dati Estratti</h3>
+          <div id="extractedData"></div>
+        </div>
+        <div class="card">
+          <h3>🌟 Clausola Gemella™ <span class="badge badge-accent">Disruptive</span></h3>
+          <div id="gemellData"></div>
+        </div>
+        <div class="card full-width">
+          <h3>🏆 ContractIQ Score™ Breakdown <span class="badge badge-accent">Proprietario</span></h3>
+          <div id="scoringBreakdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-grid" id="portfolioSummary" style="display:none">
+      <div class="summary-card">
+        <div class="label">Contratti Totali</div>
+        <div class="value" id="sumContracts">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Valore Portfolio</div>
+        <div class="value" id="sumValue">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">ARR Totale</div>
+        <div class="value" id="sumARR">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Score Medio</div>
+        <div class="value" id="sumScore">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STRATEGIC CLIENTS VIEW -->
+  <div class="content view" id="view-strategic">
+    <div class="dashboard-grid">
+      <div class="card">
+        <h3>🥇 Top Clienti per Fatturato</h3>
+        <div class="chart-wrap"><canvas id="clientChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>⚠️ Concentrazione Portfolio</h3>
+        <div class="chart-wrap"><canvas id="concentrationChart"></canvas></div>
+      </div>
+      <div class="card full-width">
+        <h3>👑 Clienti Strategici</h3>
+        <table>
+          <thead><tr><th>Cliente</th><th>Valore</th><th>ARR</th><th>% Fatturato</th><th>Score</th><th>Contratti</th></tr></thead>
+          <tbody id="strategicTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CRITICAL CONTRACTS VIEW -->
+  <div class="content view" id="view-critical">
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="label">Revenue a Rischio (30gg)</div>
+        <div class="value negative" id="risk30">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Revenue a Rischio (90gg)</div>
+        <div class="value warning" id="risk90">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Contratti Critici</div>
+        <div class="value negative" id="criticalCount">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Alta Priorità</div>
+        <div class="value warning" id="highCount">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>⚡ Contratti in Scadenza</h3>
+      <div id="expiryList"></div>
+    </div>
+  </div>
+
+  <!-- CONDITIONS VIEW -->
+  <div class="content view" id="view-conditions">
+    <div class="dashboard-grid">
+      <div class="card">
+        <h3>💸 Distribuzione Sconti</h3>
+        <div class="chart-wrap"><canvas id="discountChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>📅 Termini di Pagamento</h3>
+        <div style="text-align:center; padding:20px">
+          <div style="font-size:48px; font-weight:700; color:var(--accent)" id="avgPayment">—</div>
+          <div style="color:var(--text-muted); margin-top:4px">giorni medi</div>
+        </div>
+      </div>
+      <div class="card full-width">
+        <h3>⚠️ Contratti con Condizioni Non Standard</h3>
+        <table>
+          <thead><tr><th>Cliente</th><th>Sconto</th><th>Pagamento</th><th>Alert</th></tr></thead>
+          <tbody id="conditionsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCTS VIEW -->
+  <div class="content view" id="view-products">
+    <div class="dashboard-grid">
+      <div class="card full-width">
+        <h3>📈 Performance Prodotti/Servizi</h3>
+        <div class="chart-wrap" style="height:280px"><canvas id="productsChart"></canvas></div>
+      </div>
+      <div class="card full-width">
+        <h3>📦 Dettaglio Prodotti</h3>
+        <table>
+          <thead><tr><th>Prodotto/Servizio</th><th>Valore Totale</th><th>ARR</th><th>Contratti</th><th>Ricorrente</th></tr></thead>
+          <tbody id="productsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RISKS VIEW -->
+  <div class="content view" id="view-risks">
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="label">Esposizione Totale Penali</div>
+        <div class="value negative" id="totalExposure">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Clausole Alto Rischio</div>
+        <div class="value negative" id="highRiskCount">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Contratti Coinvolti</div>
+        <div class="value warning" id="riskContractCount">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Clausole Totali</div>
+        <div class="value" id="totalRisks">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🛡️ Risk Heatmap per Severità</h3>
+      <div id="riskList"></div>
+    </div>
+  </div>
+
+  <!-- CHAT VIEW -->
+  <div class="chat-view view" id="view-chat">
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg msg-assistant">
+        <div class="msg-bubble">
+          👋 Ciao! Sono il tuo <strong>Chief Contract Officer AI</strong>.<br>
+          Puoi chiedermi qualsiasi cosa sui tuoi contratti. Esempio:<br><br>
+          • "Quali contratti scadono il mese prossimo?"<br>
+          • "Dove stiamo applicando sconti superiori al 20%?"<br>
+          • "Qual è la nostra esposizione totale alle penali?"
+        </div>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <div class="follow-ups" id="followUps"></div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chatInput" placeholder="Fai una domanda sui tuoi contratti..." rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+        <button class="send-btn" onclick="sendMessage()">↑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ALERTS VIEW -->
+  <div class="content view" id="view-alerts">
+    <div class="summary-card" style="margin-bottom:20px; padding:20px">
+      <div class="label">Revenue Totale a Rischio</div>
+      <div class="value negative" id="totalAtRisk">—</div>
+    </div>
+    <div id="alertsList">
+      <div style="text-align:center; padding:40px; color:var(--text-muted)">
+        Carica dei contratti per generare alert proattivi
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const API = 'http://localhost:8000';
+const CLIENT_ID = 'demo_client';
+const SESSION_ID = 'session_' + Date.now();
+let portfolioData = null;
+let lastMessageId = null;
+let feedbackCount = 0;
+
+// ── View management ──────────────────────────────────────────────────────────
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const el = document.getElementById('view-' + name);
+  if (el) el.classList.add('active');
+  event?.currentTarget?.classList?.add('active');
+
+  const titles = {
+    upload: 'Upload & Analyze', strategic: 'Clienti Strategici',
+    critical: 'Contratti Critici', conditions: 'Condizioni Commerciali',
+    products: 'Performance Prodotti', risks: 'Clausole a Rischio',
+    chat: 'Contract Chat AI', alerts: 'Alert Proattivi',
+  };
+  document.getElementById('viewTitle').textContent = titles[name] || name;
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) uploadFileObj(e.dataTransfer.files[0]);
+});
+
+async function uploadFile(input) {
+  if (input.files[0]) uploadFileObj(input.files[0]);
+}
+
+async function uploadFileObj(file) {
+  document.getElementById('processingBar').style.display = 'block';
+  document.getElementById('processingMsg').textContent = '📄 Parsing documento...';
+  document.getElementById('analysisResult').style.display = 'none';
+
+  const steps = [
+    [600, '🔍 Estrazione clausole semantiche...'],
+    [1200, '🤖 DSPy Multi-Agent Analysis...'],
+    [2000, '🌟 Clausola Gemella™ benchmarking...'],
+    [2800, '🏆 Calcolo ContractIQ Score™...'],
+    [3400, '📊 Ingestione RAG per-cliente...'],
+  ];
+  steps.forEach(([delay, msg]) => setTimeout(() => {
+    document.getElementById('processingMsg').textContent = msg;
+  }, delay));
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('project_id', 'demo_project');
+
+    const resp = await fetch(`${API}/api/documents/upload/`, {
+      method: 'POST', body: form,
+      headers: { 'x-client-id': CLIENT_ID },
+    });
+    const data = await resp.json();
+
+    document.getElementById('processingBar').style.display = 'none';
+    renderAnalysis(data);
+    await loadPortfolio();
+    updateOptimizationStatus();
+  } catch (err) {
+    // Demo mode with mock data
+    document.getElementById('processingBar').style.display = 'none';
+    renderAnalysis(getMockAnalysis(file.name));
+    renderMockPortfolio();
+  }
+}
+
+function renderAnalysis(data) {
+  document.getElementById('analysisResult').style.display = 'block';
+  const ext = data.extracted || {};
+  const sc = data.scoring || {};
+  const score = data.contract_score || sc.overall_score || 0;
+
+  document.getElementById('resScore').textContent = score;
+  document.getElementById('resScoreLabel').textContent =
+    score >= 70 ? '✅ Buon contratto' : score >= 50 ? '⚠️ Nella media' : '❌ Sotto media';
+  document.getElementById('resValue').textContent = formatEur(ext.total_value_eur);
+  document.getElementById('resARR').textContent = formatEur(ext.annual_recurring_revenue);
+  document.getElementById('resExpiry').textContent = ext.end_date || '—';
+
+  const days = ext.end_date ? Math.round((new Date(ext.end_date) - new Date()) / 86400000) : null;
+  document.getElementById('resDays').innerHTML = days !== null
+    ? `<span class="${days < 60 ? 'negative' : days < 90 ? 'warning' : 'positive'}">${days} giorni alla scadenza</span>`
+    : '';
+
+  document.getElementById('extractedData').innerHTML = `
+    <table>
+      <tr><td style="color:var(--text-muted);font-size:12px">Cliente</td><td style="font-weight:600">${ext.client_name || '—'}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px">Tipo</td><td>${ext.contract_type || '—'}</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px">Pagamento</td><td>${ext.payment_terms_days || 30} giorni</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px">SLA</td><td>${ext.sla_uptime_percentage || '—'}%</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px">Sconto</td><td>${ext.discount_percentage || 0}%</td></tr>
+      <tr><td style="color:var(--text-muted);font-size:12px">Rinnovo Tacito</td><td>${ext.auto_renewal ? '✅ Sì' : '❌ No'}</td></tr>
+    </table>
+  `;
+
+  const gemella = data.clausola_gemella || [];
+  document.getElementById('gemellData').innerHTML = gemella.length ? gemella.map(g => {
+    const cls = g.percentile_ranking < 25 ? 'gemella-high' : g.percentile_ranking < 50 ? 'gemella-medium' : 'gemella-low';
+    const color = g.percentile_ranking < 25 ? 'var(--red)' : g.percentile_ranking < 50 ? 'var(--yellow)' : 'var(--green)';
+    return `<div class="gemella-item ${cls}">
+      <div class="gemella-header">
+        <span class="gemella-type">${g.clause_type}</span>
+        <span class="percentile-badge" style="background:rgba(0,0,0,0.3);color:${color}">${g.percentile_ranking}° percentile</span>
+      </div>
+      <div class="gemella-text">${g.summary || ''}</div>
+      <div class="gemella-script">💡 ${g.negotiation_script || ''}</div>
+    </div>`;
+  }).join('') : '<p style="color:var(--text-muted);font-size:13px">Nessun dato di benchmark disponibile per questo settore.</p>';
+
+  document.getElementById('scoringBreakdown').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      ${[
+        ['Revenue Quality', sc.revenue_quality || 0, 'var(--green)'],
+        ['Risk Exposure', sc.risk_exposure || 0, 'var(--red)'],
+        ['Strategic Value', sc.strategic_value || 0, 'var(--accent)'],
+        ['Concentration Risk', sc.concentration_risk || 0, 'var(--yellow)'],
+      ].map(([label, val, color]) => `
+        <div>
+          <div class="score-bar-label"><span>${label}</span><span style="color:${color};font-weight:700">${val}</span></div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:${val}%;background:${color}"></div></div>
+        </div>
+      `).join('')}
+    </div>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:16px;line-height:1.5">${sc.rationale || ''}</p>
+  `;
+}
+
+// ── Portfolio ─────────────────────────────────────────────────────────────────
+async function loadPortfolio() {
+  try {
+    const resp = await fetch(`${API}/api/analytics/portfolio/`, {
+      headers: { 'x-client-id': CLIENT_ID }
+    });
+    portfolioData = await resp.json();
+    renderPortfolio(portfolioData);
+  } catch {
+    portfolioData = getMockPortfolio();
+    renderPortfolio(portfolioData);
+  }
+}
+
+function renderPortfolio(data) {
+  const sum = data.summary || {};
+  document.getElementById('portfolioSummary').style.display = 'grid';
+  document.getElementById('sumContracts').textContent = sum.total_contracts || 0;
+  document.getElementById('sumValue').textContent = formatEur(sum.total_value_eur);
+  document.getElementById('sumARR').textContent = formatEur(sum.total_arr_eur);
+  document.getElementById('sumScore').textContent = (sum.avg_contract_score || 0).toFixed(0);
+
+  renderStrategic(data.dashboard_1_strategic_clients || {});
+  renderCritical(data.dashboard_2_critical_contracts || {});
+  renderConditions(data.dashboard_3_commercial_conditions || {});
+  renderProducts(data.dashboard_4_product_performance || {});
+  renderRisks(data.dashboard_5_risk_clauses || {});
+  renderAlerts(data);
+}
+
+function renderStrategic(d) {
+  const clients = (d.clients || []).slice(0, 8);
+  // Chart
+  renderBarChart('clientChart', clients.map(c => c.name), clients.map(c => c.value_eur),
+    clients.map(c => `rgba(99,102,241,${0.9 - clients.indexOf(c) * 0.08})`));
+
+  // Concentration donut
+  const top5 = d.top_5_concentration_pct || 0;
+  renderDoughnut('concentrationChart', ['Top 5', 'Altri'],
+    [top5, 100 - top5],
+    [d.concentration_risk === 'high' ? '#ef4444' : d.concentration_risk === 'medium' ? '#f59e0b' : '#10b981', '#2a2a3a'],
+    `HHI: ${d.herfindahl_index || 0}`);
+
+  document.getElementById('strategicTable').innerHTML = clients.map(c => `
+    <tr>
+      <td style="font-weight:500">${c.name}</td>
+      <td>${formatEur(c.value_eur)}</td>
+      <td>${formatEur(c.arr_eur)}</td>
+      <td><span style="color:${c.revenue_share_pct > 30 ? 'var(--red)' : 'var(--text)'}">${c.revenue_share_pct}%</span></td>
+      <td><span style="color:${scoreColor(c.contract_score)};font-weight:700">${c.contract_score}</span></td>
+      <td>${c.contracts}</td>
+    </tr>
+  `).join('');
+}
+
+function renderCritical(d) {
+  document.getElementById('risk30').textContent = formatEur(d.revenue_at_risk_30_days);
+  document.getElementById('risk90').textContent = formatEur(d.revenue_at_risk_90_days);
+  document.getElementById('criticalCount').textContent = d.critical_count || 0;
+  document.getElementById('highCount').textContent = d.high_count || 0;
+
+  document.getElementById('expiryList').innerHTML = (d.expiring_contracts || []).map(c => `
+    <div class="contract-item">
+      <div class="left">
+        <div class="urgency-dot urgency-${c.urgency}"></div>
+        <div class="icon-box" style="background:rgba(99,102,241,0.1)">📄</div>
+        <div>
+          <div class="name">${c.client_name}</div>
+          <div class="meta">${c.filename} · ${c.days_to_expiry} giorni · ${formatEur(c.value_eur)}</div>
+          ${c.auto_renewal ? `<div class="meta" style="color:var(--yellow)">⚠️ Rinnovo tacito — agire entro ${c.action_deadline || '?'}</div>` : ''}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;color:var(--text-muted)">${c.end_date}</div>
+        <div class="change" style="color:${c.urgency === 'critical' ? 'var(--red)' : 'var(--yellow)'}">${c.urgency.toUpperCase()}</div>
+      </div>
+    </div>
+  `).join('') || '<p style="color:var(--text-muted)">Nessun contratto in scadenza nei prossimi 6 mesi.</p>';
+}
+
+function renderConditions(d) {
+  document.getElementById('avgPayment').textContent = d.avg_payment_days || 30;
+  const hist = d.discount_histogram || [];
+  if (hist.length) {
+    renderBarChart('discountChart', hist.map(h => h.range), hist.map(h => h.count),
+      hist.map(h => h.count > 3 ? '#ef4444' : '#6366f1'));
+  }
+  document.getElementById('conditionsTable').innerHTML =
+    (d.non_standard_contracts || []).slice(0, 10).map(c => `
+      <tr>
+        <td>${c.client_name}</td>
+        <td><span style="color:${c.discount_pct > 20 ? 'var(--red)' : 'var(--text)'}">${c.discount_pct}%</span></td>
+        <td><span style="color:${c.payment_days > 60 ? 'var(--yellow)' : 'var(--text)'}">${c.payment_days}gg</span></td>
+        <td style="font-size:12px;color:var(--yellow)">${c.alert}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">Tutti i contratti nei termini standard</td></tr>';
+}
+
+function renderProducts(d) {
+  const prods = (d.products || []).slice(0, 8);
+  renderBarChart('productsChart', prods.map(p => p.name), prods.map(p => p.total_value_eur),
+    prods.map(p => p.is_recurring ? '#10b981' : '#6366f1'));
+  document.getElementById('productsTable').innerHTML = prods.map(p => `
+    <tr>
+      <td style="font-weight:500">${p.name}</td>
+      <td>${formatEur(p.total_value_eur)}</td>
+      <td>${p.is_recurring ? formatEur(p.arr_eur) : '—'}</td>
+      <td>${p.contract_count}</td>
+      <td>${p.is_recurring ? '<span style="color:var(--green)">✅ Sì</span>' : '❌ No'}</td>
+    </tr>
+  `).join('');
+}
+
+function renderRisks(d) {
+  document.getElementById('totalExposure').textContent = formatEur(d.total_penalty_exposure_eur);
+  document.getElementById('highRiskCount').textContent = d.high_risk_count || 0;
+  document.getElementById('riskContractCount').textContent = d.contracts_with_risks || 0;
+  document.getElementById('totalRisks').textContent = (d.all_risks || []).length;
+
+  const allRisks = [
+    ...(d.risk_by_severity?.high || []),
+    ...(d.risk_by_severity?.medium || []),
+    ...(d.risk_by_severity?.low || []),
+  ];
+  document.getElementById('riskList').innerHTML = allRisks.slice(0, 15).map(r => `
+    <div class="gemella-item ${r.severity === 'high' ? 'gemella-high' : r.severity === 'medium' ? 'gemella-medium' : 'gemella-low'}">
+      <div class="gemella-header">
+        <span class="gemella-type">${r.risk_type.replace(/_/g, ' ')}</span>
+        <span class="badge ${r.severity === 'high' ? 'badge-red' : r.severity === 'medium' ? 'badge-yellow' : 'badge-green'}">${r.severity}</span>
+      </div>
+      <div class="gemella-text"><strong>${r.client_name}</strong> — ${r.clause_text || ''}</div>
+    </div>
+  `).join('') || '<p style="color:var(--text-muted)">Nessuna clausola a rischio rilevata.</p>';
+}
+
+function renderAlerts(portfolioData) {
+  try {
+    fetch(`${API}/api/analytics/alerts/`, { headers: { 'x-client-id': CLIENT_ID } })
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('totalAtRisk').textContent = formatEur(data.revenue_at_risk_total || 0);
+        document.getElementById('alertsList').innerHTML = (data.alerts || []).map(a => `
+          <div class="alert-item alert-${a.urgency}">
+            <div class="alert-content">
+              <div class="alert-title">${a.urgency === 'critical' ? '🔴' : '🟡'} ${a.client}</div>
+              <div class="alert-msg">${a.message}</div>
+              <div class="alert-action">→ ${a.action}${a.deadline ? ` entro ${a.deadline}` : ''}</div>
+            </div>
+            ${a.revenue_at_risk_eur > 0 ? `<div class="alert-value">€${(a.revenue_at_risk_eur/1000).toFixed(0)}k</div>` : ''}
+          </div>
+        `).join('') || '<p style="color:var(--text-muted)">Nessun alert attivo.</p>';
+      });
+  } catch {}
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+
+  addMessage('user', q);
+  document.getElementById('followUps').innerHTML = '';
+
+  const loadingId = 'loading-' + Date.now();
+  const chat = document.getElementById('chatMessages');
+  chat.innerHTML += `<div class="msg msg-assistant" id="${loadingId}">
+    <div class="msg-bubble"><div class="loading"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>
+  </div>`;
+  chat.scrollTop = chat.scrollHeight;
+
+  try {
+    const resp = await fetch(`${API}/api/chat/`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-client-id': CLIENT_ID },
+      body: JSON.stringify({ project_id: 'demo_project', session_id: SESSION_ID, question: q }),
+    });
+    const data = await resp.json();
+    lastMessageId = data.message_id;
+    document.getElementById(loadingId).remove();
+    addAssistantMessage(data);
+    updateOptimizationStatus();
+  } catch {
+    // Demo fallback
+    document.getElementById(loadingId).remove();
+    addAssistantMessage({
+      answer: `Ho analizzato i contratti caricati. ${q.includes('scad') ? 'Ho trovato 2 contratti in scadenza entro 60 giorni per un valore totale di €180.000.' : 'Basandomi sui contratti nel tuo portfolio, posso rispondere con dati precisi una volta collegato al backend.'}`,
+      confidence: 'high',
+      sources: [{ contract: 'demo_contract.pdf', clause: 'Art. 5', text: 'Durata e rinnovo...' }],
+      follow_up_questions: ['Quali contratti hanno rinnovo tacito?', 'Qual è la nostra esposizione totale?'],
+    });
+  }
+}
+
+function addMessage(role, content) {
+  const chat = document.getElementById('chatMessages');
+  chat.innerHTML += `<div class="msg msg-${role}"><div class="msg-bubble">${content}</div></div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addAssistantMessage(data) {
+  const chat = document.getElementById('chatMessages');
+  const sources = Array.isArray(data.sources)
+    ? data.sources : (typeof data.sources === 'string' ? JSON.parse(data.sources || '[]') : []);
+  const followUps = Array.isArray(data.follow_up_questions)
+    ? data.follow_up_questions : (typeof data.follow_up_questions === 'string' ? JSON.parse(data.follow_up_questions || '[]') : []);
+  const msgId = 'msg-' + Date.now();
+
+  chat.innerHTML += `<div class="msg msg-assistant" id="${msgId}">
+    <div class="confidence confidence-${data.confidence}">
+      ${data.confidence === 'high' ? '🟢' : data.confidence === 'medium' ? '🟡' : '🔴'} Confidenza ${data.confidence}
+    </div>
+    <div class="msg-bubble">${data.answer}</div>
+    ${sources.length ? `<div class="msg-sources">${sources.slice(0,3).map(s =>
+      `<span class="source-chip">📄 ${s.contract || ''} › ${s.clause || ''}</span>`
+    ).join('')}</div>` : ''}
+    <div class="msg-rating" id="rating-${msgId}">
+      <span style="font-size:11px;color:var(--text-muted)">Utile?</span>
+      ${[1,2,3,4,5].map(n => `<button class="star-btn" onclick="submitRating(${n},'${msgId}')">★</button>`).join('')}
+    </div>
+  </div>`;
+
+  // Follow-up chips
+  if (followUps.length) {
+    document.getElementById('followUps').innerHTML = followUps.map(q =>
+      `<div class="follow-up-chip" onclick="document.getElementById('chatInput').value='${q}';sendMessage()">${q}</div>`
+    ).join('');
+  }
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function submitRating(rating, msgId) {
+  // Highlight stars
+  const stars = document.querySelectorAll(`#rating-${msgId} .star-btn`);
+  stars.forEach((s, i) => s.classList.toggle('active', i < rating));
+  feedbackCount++;
+  updateOptimizationStatus();
+
+  const comment = rating <= 2 ? prompt('Come avremmo potuto rispondere meglio?') : null;
+  try {
+    await fetch(`${API}/api/feedback/`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-client-id': CLIENT_ID },
+      body: JSON.stringify({ message_id: lastMessageId, rating, comment }),
+    });
+  } catch {}
+}
+
+async function updateOptimizationStatus() {
+  try {
+    const resp = await fetch(`${API}/api/analytics/stats/`, { headers: { 'x-client-id': CLIENT_ID } });
+    const data = await resp.json();
+    const opt = data.optimization || {};
+    const feedback = opt.total_feedback || feedbackCount;
+    const threshold = opt.feedback_needed || 20;
+    const pct = Math.min(100, (feedback / threshold) * 100);
+
+    document.getElementById('optFill').style.width = pct + '%';
+    document.getElementById('optLabel').textContent = opt.optimized
+      ? `Versione ${opt.version} · ${feedback} feedback`
+      : `${feedback}/${threshold} feedback raccolti`;
+    document.getElementById('optStatus').textContent = opt.optimized
+      ? `🔥 Ottimizzato v${opt.version}` : 'Base model';
+  } catch {
+    const pct = Math.min(100, (feedbackCount / 20) * 100);
+    document.getElementById('optFill').style.width = pct + '%';
+    document.getElementById('optLabel').textContent = `${feedbackCount}/20 feedback raccolti`;
+  }
+}
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+const chartInstances = {};
+function renderBarChart(id, labels, data, colors) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors || '#6366f1', borderRadius: 6, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#2a2a3a' }, ticks: { color: '#64748b', font: { size: 11 } } },
+        y: { grid: { color: '#2a2a3a' }, ticks: { color: '#64748b', font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+function renderDoughnut(id, labels, data, colors, centerText) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '70%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#64748b', font: { size: 11 } } },
+      },
+    },
+    plugins: [{
+      id: 'centerText',
+      beforeDraw(chart) {
+        const { ctx: c, width, height } = chart;
+        c.save();
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillStyle = '#e2e8f0'; c.font = 'bold 12px Inter';
+        c.fillText(centerText, width / 2, height / 2);
+        c.restore();
+      }
+    }]
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function formatEur(v) {
+  if (!v && v !== 0) return '—';
+  if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `€${(v/1e3).toFixed(0)}k`;
+  return `€${v.toFixed(0)}`;
+}
+
+function scoreColor(s) {
+  return s >= 70 ? 'var(--green)' : s >= 50 ? 'var(--yellow)' : 'var(--red)';
+}
+
+// ── Mock data for demo ───────────────────────────────────────────────────────
+function getMockAnalysis(filename) {
+  return {
+    contract_score: 68,
+    extracted: {
+      client_name: 'Acme SRL', contract_type: 'SaaS', total_value_eur: 180000,
+      annual_recurring_revenue: 60000, start_date: '2024-01-01', end_date: '2026-06-30',
+      auto_renewal: true, renewal_notice_days: 60, payment_terms_days: 60,
+      discount_percentage: 22, sla_uptime_percentage: 99.5,
+    },
+    scoring: {
+      overall_score: 68, revenue_quality: 75, risk_exposure: 45,
+      strategic_value: 80, concentration_risk: 55,
+      rationale: 'Contratto con buon valore strategico ma sconto non standard (22%) e termini di pagamento allungati (60gg) che impattano il cash flow. SLA adeguato al settore.',
+    },
+    clausola_gemella: [
+      { clause_type: 'payment_terms', percentile_ranking: 28, summary: 'La media del settore SaaS è 30 giorni. Sei al 28° percentile.', negotiation_script: 'Proponi 30gg con sconto 2% per pagamento anticipato.', priority: 'high' },
+      { clause_type: 'sla', percentile_ranking: 62, summary: 'SLA 99.5% allineato con il 62° percentile del settore.', negotiation_script: 'SLA nella norma, non prioritario da rinegoziare.', priority: 'low' },
+    ],
+  };
+}
+
+function getMockPortfolio() {
+  return {
+    summary: { total_contracts: 12, total_value_eur: 1450000, total_arr_eur: 380000, avg_contract_score: 63 },
+    dashboard_1_strategic_clients: {
+      total_portfolio_value: 1450000, total_arr: 380000, client_count: 8,
+      herfindahl_index: 2150, concentration_risk: 'high', top_5_concentration_pct: 78,
+      clients: [
+        { name: 'Acme SRL', value_eur: 320000, arr_eur: 96000, contracts: 2, revenue_share_pct: 22.1, contract_score: 72 },
+        { name: 'Beta SpA', value_eur: 280000, arr_eur: 84000, contracts: 1, revenue_share_pct: 19.3, contract_score: 58 },
+        { name: 'Gamma Corp', value_eur: 210000, arr_eur: 70000, contracts: 3, revenue_share_pct: 14.5, contract_score: 81 },
+        { name: 'Delta SRL', value_eur: 190000, arr_eur: 0, contracts: 1, revenue_share_pct: 13.1, contract_score: 45 },
+        { name: 'Epsilon SpA', value_eur: 150000, arr_eur: 50000, contracts: 2, revenue_share_pct: 10.3, contract_score: 67 },
+      ],
+    },
+    dashboard_2_critical_contracts: {
+      revenue_at_risk_30_days: 180000, revenue_at_risk_90_days: 370000,
+      critical_count: 2, high_count: 3,
+      expiring_contracts: [
+        { client_name: 'Acme SRL', filename: 'contratto_acme_2024.pdf', value_eur: 180000, end_date: '2025-04-15', days_to_expiry: 18, auto_renewal: true, renewal_notice_days: 60, urgency: 'critical', action_deadline: '2025-02-13', contract_score: 72 },
+        { client_name: 'Beta SpA', filename: 'beta_enterprise.pdf', value_eur: 190000, end_date: '2025-05-20', days_to_expiry: 53, auto_renewal: false, renewal_notice_days: 0, urgency: 'high', contract_score: 58 },
+        { client_name: 'Delta SRL', filename: 'delta_services.pdf', value_eur: 80000, end_date: '2025-06-30', days_to_expiry: 94, auto_renewal: false, renewal_notice_days: 0, urgency: 'medium', contract_score: 45 },
+      ],
+    },
+    dashboard_3_commercial_conditions: {
+      avg_discount_pct: 14.2, avg_payment_days: 52, high_discount_count: 3, long_payment_count: 4,
+      discount_histogram: [{range:'0-5%',count:3},{range:'5-10%',count:2},{range:'10-20%',count:4},{range:'20-30%',count:2},{range:'30-50%',count:1}],
+      non_standard_contracts: [
+        { client_name: 'Delta SRL', discount_pct: 35, payment_days: 90, alert: 'Sconto molto elevato (35%); Termini critici (90gg)' },
+        { client_name: 'Acme SRL', discount_pct: 22, payment_days: 60, alert: 'Sconto sopra media (22%)' },
+      ],
+    },
+    dashboard_4_product_performance: {
+      total_recurring_arr: 380000,
+      products: [
+        { name: 'Platform SaaS', total_value_eur: 480000, arr_eur: 160000, contract_count: 5, is_recurring: true, avg_value_per_contract: 96000 },
+        { name: 'Consulting', total_value_eur: 320000, arr_eur: 0, contract_count: 4, is_recurring: false, avg_value_per_contract: 80000 },
+        { name: 'Support Premium', total_value_eur: 210000, arr_eur: 70000, contract_count: 3, is_recurring: true, avg_value_per_contract: 70000 },
+        { name: 'Integration Services', total_value_eur: 180000, arr_eur: 0, contract_count: 2, is_recurring: false, avg_value_per_contract: 90000 },
+      ],
+    },
+    dashboard_5_risk_clauses: {
+      total_penalty_exposure_eur: 85000, high_risk_count: 4, contracts_with_risks: 6,
+      all_risks: [{ risk_type: 'unlimited_liability', severity: 'high', client_name: 'Beta SpA', clause_text: 'Responsabilità illimitata per danni diretti e indiretti senza cap contrattuale.' }],
+      risk_by_severity: {
+        high: [{ risk_type: 'unlimited_liability', severity: 'high', client_name: 'Beta SpA', clause_text: 'Responsabilità illimitata per danni diretti e indiretti.' }, { risk_type: 'sla_penalty', severity: 'high', client_name: 'Delta SRL', clause_text: 'Penale del 10% del contratto per ogni ora di downtime oltre SLA.' }],
+        medium: [{ risk_type: 'auto_renewal', severity: 'medium', client_name: 'Acme SRL', clause_text: 'Rinnovo tacito con preavviso di 60 giorni.' }],
+        low: [],
+      },
+    },
+  };
+}
+
+function renderMockPortfolio() {
+  portfolioData = getMockPortfolio();
+  renderPortfolio(portfolioData);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadPortfolio();
+updateOptimizationStatus();
+</script>
+</body>
+</html>

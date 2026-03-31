@@ -1,0 +1,253 @@
+version: "3.9"
+
+# ============================================================
+# ContractIQ — Multi-Agent Contract Intelligence OS
+# Architecture: Microservices | DSPy | Per-Client RAG
+# LLM: qwen3.5-122b via EXTERNAL_LLM_URL (OpenAI-compatible)
+# Embeddings: SentenceTransformer all-MiniLM-L6-v2 (local, free)
+# ============================================================
+
+services:
+
+  # ── API Gateway ──────────────────────────────────────────
+  gateway:
+    build: ./mnt/user-data/outputs/contractiq/gateway
+    container_name: contractiq_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - DSPY_AGENTS_URL=http://dspy_agents:8001
+      - RAG_SERVICE_URL=http://rag_service:8002
+      - PARSER_SERVICE_URL=http://parser_service:8003
+      - ANALYTICS_SERVICE_URL=http://analytics_service:8004
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-contractiq}:${POSTGRES_PASSWORD:-contractiq_dev_password}@postgres:5432/contractiq
+      - REDIS_URL=redis://redis:6379/0
+      - CHAT_TIMEOUT=${CHAT_TIMEOUT:-60}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── DSPy Multi-Agent System ───────────────────────────────
+  # THE CORE DIFFERENTIATOR: optimized programs per client
+  dspy_agents:
+    build: ./mnt/user-data/outputs/contractiq/dspy_agents
+    container_name: contractiq_dspy
+    ports:
+      - "8001:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - RAG_SERVICE_URL=http://rag_service:8002
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-contractiq}:${POSTGRES_PASSWORD:-contractiq_dev_password}@postgres:5432/contractiq
+      - REDIS_URL=redis://redis:6379/0
+      - OPTIMIZED_MODELS_PATH=/app/optimized_models
+      - EXTERNAL_LLM_URL=${EXTERNAL_LLM_URL:-https://api.regolo.ai/v1}
+      - EXTERNAL_LLM_MODEL=${EXTERNAL_LLM_MODEL:-qwen3.5-122b}
+      - EXTERNAL_LLM_API_KEY=${EXTERNAL_LLM_API_KEY}
+      - FEEDBACK_THRESHOLD=20
+      - SCORE_HISTORY_ENABLED=true
+    volumes:
+      - dspy_models:/app/optimized_models
+      # Cache SentenceTransformer model weights — downloaded once, reused across restarts
+      - st_models_cache:/root/.cache/huggingface
+    depends_on:
+      - redis
+      - rag_service
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Per-Client RAG Service ────────────────────────────────
+  # Each client gets isolated ChromaDB collection
+  # Embeddings: SentenceTransformer all-MiniLM-L6-v2 (local, no API key)
+  rag_service:
+    build: ./mnt/user-data/outputs/contractiq/rag_service
+    container_name: contractiq_rag
+    ports:
+      - "8002:8002"
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - POSTGRES_URL=postgresql+asyncpg://${POSTGRES_USER:-contractiq}:${POSTGRES_PASSWORD:-contractiq_dev_password}@postgres:5432/contractiq
+      - EXTERNAL_LLM_URL=${EXTERNAL_LLM_URL:-https://api.regolo.ai/v1}
+      - EXTERNAL_LLM_MODEL=${EXTERNAL_LLM_MODEL:-qwen3.5-122b}
+      - EXTERNAL_LLM_API_KEY=${EXTERNAL_LLM_API_KEY}
+      - BENCHMARK_MIN_SAMPLE=10
+      - EPISODIC_MIN_RATING=3
+    volumes:
+      # Cache SentenceTransformer model weights — shared with dspy_agents
+      - st_models_cache:/root/.cache/huggingface
+    depends_on:
+      - chromadb
+      - postgres
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Document Parser Service ───────────────────────────────
+  parser_service:
+    build: ./mnt/user-data/outputs/contractiq/parser_service
+    container_name: contractiq_parser
+    ports:
+      - "8003:8003"
+    environment:
+      - EXTERNAL_LLM_MODEL=${EXTERNAL_LLM_MODEL:-qwen3.5-122b}
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Analytics & Dashboard Service ────────────────────────
+  analytics_service:
+    build: ./mnt/user-data/outputs/contractiq/analytics_service
+    container_name: contractiq_analytics
+    ports:
+      - "8004:8004"
+    environment:
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-contractiq}:${POSTGRES_PASSWORD:-contractiq_dev_password}@postgres:5432/contractiq
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Frontend (Nginx) ──────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: contractiq_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── ChromaDB — Per-Client Vector Store ────────────────────
+  chromadb:
+    image: chromadb/chroma:0.5.3
+    container_name: contractiq_chroma
+    ports:
+      - "8005:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - contractiq_net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── PostgreSQL ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: contractiq_postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-contractiq}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-contractiq_dev_password}
+      - POSTGRES_DB=contractiq
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # postgres_init/001_score_history.sql e 002_user_feedback.sql devono esistere
+      - ./postgres_init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-contractiq}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - contractiq_net
+    restart: on-failure
+
+  # ── DB Migrations (run-once) ──────────────────────────────
+  # Applies schema migrations after postgres is healthy.
+  # Uses restart: "no" — runs once and exits cleanly.
+  db_migrations:
+    image: postgres:16-alpine
+    container_name: contractiq_migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD:-contractiq_dev_password}
+    volumes:
+      - ./postgres_init:/migrations
+    command: >
+      sh -c "psql -h postgres -U ${POSTGRES_USER:-contractiq} -d contractiq
+             -f /migrations/001_score_history.sql
+             -f /migrations/002_user_feedback.sql
+             && echo 'Migrations applied successfully'"
+    networks:
+      - contractiq_net
+    restart: "no"
+
+  # ── Redis — Task Queue + Cache ────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: contractiq_redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - contractiq_net
+    restart: on-failure
+
+# ── Volumes ───────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+  uploads_data:
+  dspy_models:          # Compiled DSPy programs per client — the prompt moat
+  st_models_cache:      # SentenceTransformer weights — downloaded once, shared across services
+
+# ── Network ───────────────────────────────────────────────
+networks:
+  contractiq_net:
+    driver: bridge
