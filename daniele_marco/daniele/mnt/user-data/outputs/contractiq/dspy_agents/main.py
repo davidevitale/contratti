@@ -216,6 +216,7 @@ class GemellaSignature(dspy.Signature):
 
 RAG_URL = os.getenv("RAG_SERVICE_URL", "http://rag_service:8002")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+BENCHMARK_SERVICE_URL = os.getenv("BENCHMARK_SERVICE_URL", "http://benchmark_service:8006")
 EXTERNAL_LLM_URL = os.getenv("EXTERNAL_LLM_URL")       # defined in .env
 EXTERNAL_LLM_MODEL = os.getenv("EXTERNAL_LLM_MODEL", "qwen3.5-122b")  # default per Regolo AI
 EXTERNAL_LLM_API_KEY = os.getenv("EXTERNAL_LLM_API_KEY", "")  # optional: bearer token
@@ -419,11 +420,30 @@ async def analyze_contract(req: AnalyzeRequest):
 
     # ── 2. Scoring ───────────────────────────────────────────────────────────
     scoring_data = ScoringData()  # safe default
+    
+    # Chiama benchmark service per sector_benchmarks
+    sector_benchmarks_str = ""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            deal_size = extraction.get("total_value_eur", 0)
+            resp = await client.get(
+                f"{BENCHMARK_SERVICE_URL}/benchmark/summary",
+                params={
+                    "sector": req.sector,
+                    "deal_size": deal_size,
+                    "country": "IT"
+                }
+            )
+            if resp.status_code == 200:
+                sector_benchmarks_str = resp.json().get("summary_text", "")
+    except Exception as e:
+        logger.warning(f"Benchmark service unavailable, proceeding without: {e}")
+
     try:
         pred = score_predictor(
             extracted_contract=json.dumps(extraction, ensure_ascii=False),
             portfolio_context="",
-            sector_benchmarks=req.sector,
+            sector_benchmarks=sector_benchmarks_str,
         )
         raw = getattr(pred, "scoring_json", "")
         parsed = extract_json_from_response(raw)
@@ -448,12 +468,35 @@ async def analyze_contract(req: AnalyzeRequest):
     if risks:
         first_risk = risks[0] if isinstance(risks, list) and risks else {}
         clause = first_risk.get("clause", "") if isinstance(first_risk, dict) else str(risks)
+        # Benchmark specifico per clausola
+        benchmark_corpus_str = ""
+        clause_type_val = first_risk.get("flag", "Liability") if isinstance(first_risk, dict) else "Liability"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{BENCHMARK_SERVICE_URL}/benchmark/clause",
+                    params={
+                        "clause_type": clause_type_val,
+                        "sector": req.sector
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("sample_size", 0) >= 5:
+                        benchmark_corpus_str = (
+                            f"Nel tuo settore ({req.sector}), questa clausola ha valore mediano "
+                            f"{data.get('p50_value', 'N/A')} con range P25-P75 di {data.get('p25_value', 'N/A')}-{data.get('p75_value', 'N/A')}. "
+                            f"Il tuo contratto è al {data.get('percentile_rank', 50)}° percentile su {data['sample_size']} contratti."
+                        )
+        except Exception as e:
+            logger.warning(f"Clause benchmark unavailable: {e}")
+
         try:
             pred = gemella_predictor(
                 clause_text=clause or "N/A",
-                clause_type=first_risk.get("flag", "Liability") if isinstance(first_risk, dict) else "Liability",
+                clause_type=clause_type_val,
                 sector=req.sector,
-                benchmark_corpus="",
+                benchmark_corpus=benchmark_corpus_str,
             )
             raw = getattr(pred, "gemella_json", "")
             parsed = extract_json_from_response(raw)
@@ -463,6 +506,20 @@ async def analyze_contract(req: AnalyzeRequest):
                 logger.warning(f"Gemella: DSPy response unparseable. Raw: {raw[:200]}")
         except Exception as e:
             logger.error(f"ClausolaGemella failed: {e}", exc_info=True)
+
+    # ── 4. Ingest Benchmark Data ─────────────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(
+                f"{BENCHMARK_SERVICE_URL}/benchmark/ingest",
+                json={
+                    "client_id": req.client_id,
+                    "sector": req.sector,
+                    "extraction": extraction
+                }
+            )
+    except Exception as e:
+        logger.debug(f"Failed to post to benchmark ingest: {e}")
 
     # ── Response ─────────────────────────────────────────────────────────────
     return {

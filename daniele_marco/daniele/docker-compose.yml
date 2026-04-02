@@ -58,6 +58,7 @@ services:
       - EXTERNAL_LLM_API_KEY=${EXTERNAL_LLM_API_KEY}
       - FEEDBACK_THRESHOLD=20
       - SCORE_HISTORY_ENABLED=true
+      - BENCHMARK_SERVICE_URL=http://benchmark_service:8006
     volumes:
       - dspy_models:/app/optimized_models
       # Cache SentenceTransformer model weights — downloaded once, reused across restarts
@@ -146,6 +147,26 @@ services:
       timeout: 10s
       retries: 3
 
+  # ── Benchmark Service ───────────────────────────────────────
+  benchmark_service:
+    build: ./mnt/user-data/outputs/contractiq/benchmark_service
+    container_name: contractiq_benchmark
+    ports:
+      - "8006:8006"
+    environment:
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-contractiq}:${POSTGRES_PASSWORD:-contractiq_dev_password}@postgres:5432/contractiq
+      - REDIS_URL=redis://redis:6379/0
+      - MIN_BUCKET_SAMPLE=5
+      - BENCHMARK_REFRESH_HOURS=24
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - contractiq_net
+    restart: on-failure
+
   # ── Frontend (Nginx) ──────────────────────────────────────
   frontend:
     build: ./frontend
@@ -214,11 +235,7 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD:-contractiq_dev_password}
     volumes:
       - ./postgres_init:/migrations
-    command: >
-      sh -c "psql -h postgres -U ${POSTGRES_USER:-contractiq} -d contractiq
-             -f /migrations/001_score_history.sql
-             -f /migrations/002_user_feedback.sql
-             && echo 'Migrations applied successfully'"
+    command: ["sh", "-c", "psql -h postgres -U ${POSTGRES_USER:-contractiq} -d contractiq -f /migrations/001_score_history.sql -f /migrations/002_user_feedback.sql -f /migrations/003_benchmark.sql && echo 'Migrations applied successfully'"]
     networks:
       - contractiq_net
     restart: "no"
